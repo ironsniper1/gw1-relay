@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+
+    <title>Guild Wars 1 Interactive Map</title>
+
+    <meta charset="UTF-8" />
+    <meta name="description" content="Guild Wars 1 Interactive Map" />
+    <meta name="keywords" content="guild wars, gw, gw1, map, tyria, kryta, elona, ascalon, that_shaman, that shaman, shaman" />
+
+    <meta property="og:title" content="Guild Wars 1 Interactive Map" />
+    <meta property="og:image" content="https://www.thatshaman.com/tools/gw1map/cards/square.jpg" />
+    <meta property="og:type" content="website" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:site" content="@that_shaman" />
+    <meta name="twitter:creator" content="@that_shaman" />
+    <meta name="twitter:title" content="Guild Wars 1 Interactive Map" />
+    <meta name="twitter:description" content="An interactive map of Guild Wars 1." />
+    <meta name="twitter:image" content="https://www.thatshaman.com/tools/gw1map/cards/large.jpg" />
+
+    <link href="https://fonts.googleapis.com/css2?family=Maitree&display=swap" rel="stylesheet">
+    <link href="stylesheet.css?v=20200516001" rel="stylesheet" />
+
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.css" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/0.2.3/leaflet.draw.css" />
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/leaflet.js"></script>
+
+    <!-- live tracker styles -->
+    <style>
+    .gw-player-icon {
+        width: 14px; height: 14px;
+        border-radius: 50%;
+        border: 2px solid rgba(255,255,255,0.9);
+        box-shadow: 0 0 4px rgba(0,0,0,0.8);
+        position: relative;
+    }
+    .gw-pulse {
+        position: absolute;
+        inset: -4px;
+        border-radius: 50%;
+        animation: gw-pulse 2s ease-out infinite;
+    }
+    @keyframes gw-pulse {
+        0%   { transform: scale(1);   opacity: 0.6; }
+        100% { transform: scale(2.5); opacity: 0;   }
+    }
+    .gw-label {
+        position: absolute;
+        top: 16px; left: 50%;
+        transform: translateX(-50%);
+        white-space: nowrap;
+        font-family: 'Maitree', Georgia, serif;
+        font-size: 11px;
+        color: #f2ead8;
+        text-shadow: 0 1px 3px #000, 0 0 5px #000;
+        pointer-events: none;
+    }
+    #trail-canvas {
+        position: fixed;
+        top: 0; left: 0;
+        width: 100vw; height: 100vh;
+        pointer-events: none;
+        z-index: 450;
+    }
+    </style>
+</head>
+<body>
+    <div id="menu_button">
+        <a href="javascript:toggleMenu()"><div><img src="resources/hamburger.png" /></div></a>
+    </div>
+    <div id="menu" class="hidden">
+        <a href="javascript:toggleMenu()"><img src="resources/logo.png" class="logo" /></a>
+        <div class="maplist">
+            <a href="javascript:loadMap(0)"><div class="mapLink" data-id="0"><img src="resources/icons/outpost.png" /> Ascalon (pre-Searing)</div></a>
+            <a href="javascript:loadMap(1)"><div class="mapLink" data-id="1"><img src="resources/icons/outpost.png" /> Tyria</div></a>
+            <a href="javascript:loadMap(2)"><div class="mapLink" data-id="2"><img src="resources/icons/outpost.png" /> Cantha</div></a>
+            <a href="javascript:loadMap(3)"><div class="mapLink" data-id="3"><img src="resources/icons/outpost.png" /> Elona</div></a>
+            <a href="javascript:loadMap(4)"><div class="mapLink" data-id="4"><img src="resources/icons/outpost.png" /> the Battle Isles</div></a>
+            <a href="javascript:loadMap(5)"><div class="mapLink" data-id="5"><img src="resources/icons/outpost.png" /> Realm of Torment</div></a>
+        </div>
+        <div class="legal">
+            <p>
+                <a href="https://www.guildwars.com" target="_blank">Guild Wars</a> Interactive map by <a href="https://www.thatshaman.com" target="_blank">that_shaman</a>
+            </p>
+            <p>
+                NCSOFT, the interlocking NC logo, ArenaNet, Guild Wars, Guild Wars Factions, Guild Wars Nightfall, Guild Wars: Eye of the North, Guild Wars 2, and all associated logos and designs are trademarks or registered trademarks of NCSOFT Corporation. All other trademarks are the property of their respective owners.
+            </p>
+        </div>
+    </div>
+    <div id="mapdiv" class="zoomed" style="width: 100vw; height: 100vh; background-color: #000000;"></div>
+
+    <!-- live tracker canvas -->
+    <canvas id="trail-canvas"></canvas>
+
+    <script src="app.js?v=20200516001"></script>
+
+    <!-- live tracker -->
+    <script>
+    const RELAY_URL   = 'wss://YOUR_RELAY_HOST';
+    const SESSION_KEY = new URLSearchParams(location.search).get('key') || 'default';
+
+    const COORD_MAP = {
+        0: { gw_min_x:-16384, gw_max_x:16384, gw_min_y:-12288, gw_max_y:12288, px_w:2048, px_h:1536 },
+        1: { gw_min_x:-32768, gw_max_x:32768, gw_min_y:-32768, gw_max_y:32768, px_w:8176, px_h:9214 },
+        2: { gw_min_x:-32768, gw_max_x:32768, gw_min_y:-32768, gw_max_y:32768, px_w:6120, px_h:4584 },
+        3: { gw_min_x:-32768, gw_max_x:32768, gw_min_y:-32768, gw_max_y:32768, px_w:6144, px_h:4608 },
+        4: { gw_min_x:-32768, gw_max_x:32768, gw_min_y:-32768, gw_max_y:32768, px_w:2048, px_h:1540 },
+        5: { gw_min_x:-32768, gw_max_x:32768, gw_min_y:-32768, gw_max_y:32768, px_w:3200, px_h:2400 },
+    };
+
+    function gwToLatLng(gw_x, gw_y) {
+        const c = COORD_MAP[continent];
+        if (!c) return null;
+        const px_x =  (gw_x - c.gw_min_x) / (c.gw_max_x - c.gw_min_x) * c.px_w;
+        const px_y = (1 - (gw_y - c.gw_min_y) / (c.gw_max_y - c.gw_min_y)) * c.px_h;
+        return unproject([px_x, px_y]);
+    }
+
+    const COLORS    = ['#e74c3c','#3b9fe8','#2ecc71','#f39c12','#a67cf0','#1abc9c','#e67e22','#e91e63'];
+    const TRAIL_MAX = 400;
+    let players = {};
+
+    function getOrCreatePlayer(id, colorIdx) {
+        if (players[id]) return players[id];
+        const color = COLORS[colorIdx % COLORS.length];
+        const icon  = L.divIcon({
+            className: '', iconSize: [14,14], iconAnchor: [7,7],
+            html: `<div class="gw-player-icon" style="background:${color}">
+                     <div class="gw-pulse" style="background:${color}"></div>
+                     <div class="gw-label" id="plabel-${id}"></div>
+                   </div>`
+        });
+        const marker = L.marker([0,0], { icon, zIndexOffset:2000 }).addTo(map);
+        players[id] = { marker, trail:[], colorIdx };
+        return players[id];
+    }
+
+    function clearAllPlayers() {
+        for (const p of Object.values(players)) { if (map && p.marker) map.removeLayer(p.marker); }
+        players = {};
+        const cv = document.getElementById('trail-canvas');
+        cv.getContext('2d').clearRect(0, 0, cv.width, cv.height);
+    }
+
+    function redrawTrails() {
+        const cv  = document.getElementById('trail-canvas');
+        cv.width  = window.innerWidth;
+        cv.height = window.innerHeight;
+        const ctx = cv.getContext('2d');
+        Object.values(players).forEach((player) => {
+            if (player.trail.length < 2) return;
+            ctx.beginPath();
+            ctx.strokeStyle = COLORS[player.colorIdx % COLORS.length];
+            ctx.lineWidth = 1.5; ctx.globalAlpha = 0.35; ctx.lineJoin = 'round';
+            let started = false;
+            for (const ll of player.trail) {
+                const pt = map.latLngToContainerPoint(ll);
+                if (!started) { ctx.moveTo(pt.x, pt.y); started = true; }
+                else            ctx.lineTo(pt.x, pt.y);
+            }
+            ctx.stroke();
+            ctx.globalAlpha = 1;
+        });
+    }
+
+    function hookMapEvents() {
+        if (typeof map === 'undefined' || map === null) { setTimeout(hookMapEvents, 150); return; }
+        map.on('moveend zoomend', redrawTrails);
+    }
+    hookMapEvents();
+
+    const _origLoadMap = window.loadMap;
+    window.loadMap = function(id) { clearAllPlayers(); _origLoadMap(id); };
+
+    window.addEventListener('resize', redrawTrails);
+
+    function handleUpdate(data) {
+        if (typeof map === 'undefined' || map === null) return;
+        const activeIds = new Set(data.players.map(p => p.id));
+        for (const id of Object.keys(players)) {
+            if (!activeIds.has(Number(id))) { map.removeLayer(players[id].marker); delete players[id]; }
+        }
+        data.players.forEach((p, i) => {
+            const ll = gwToLatLng(p.x, p.y);
+            if (!ll) return;
+            const player = getOrCreatePlayer(p.id, i);
+            player.marker.setLatLng(ll);
+            const lbl = document.getElementById(`plabel-${p.id}`);
+            if (lbl) lbl.textContent = p.name || '';
+            player.trail.push(ll);
+            if (player.trail.length > TRAIL_MAX) player.trail.shift();
+        });
+        redrawTrails();
+    }
+
+    function connect() {
+        const ws = new WebSocket(`${RELAY_URL}?key=${SESSION_KEY}&role=viewer`);
+        ws.onmessage = (e) => { const d = JSON.parse(e.data); if (d.type === 'update') handleUpdate(d); };
+        ws.onclose = () => setTimeout(connect, 3000);
+        ws.onerror = () => ws.close();
+    }
+    connect();
+    </script>
+</body>
+</html>
